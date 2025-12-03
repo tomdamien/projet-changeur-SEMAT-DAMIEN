@@ -1,0 +1,257 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+pi=3.1415927
+Pair=0.1*101325
+PH2=40*101325
+Dext=2.4
+Dint=0.8
+L=3
+
+# diamètres extérieur et intérieur des tubes (m)
+Dtubeext=0.005      # 10 mm
+Dtubeint=0.003
+
+# pas de maillage axial (m)
+Dx=0.01             # 3 m / 0.01 = 300 mailles
+
+# nombre de tubes (sera recalculé plus précisément plus bas)
+Ntube=0
+
+qair = 7.9 #Donnée du sujet
+qH2 = 0.31 #Donnée du sujet
+
+Tair = 280 #Donnée du sujet
+TH2 = 40 #Donnée du sujet
+
+# defintion des paramètres de H2 en fonction de la température à la pression P
+
+def lambda_air(T):
+    """
+    Calcul de la conductivité thermique de l'air en W/(m·K) en fonction de la température.
+    T : Température en Kelvin (K)"""
+    
+    a, b, c = 2.528e-3, 7.487e-5, -1.562e-8  # coefficients spécifiques à l'air
+    return (a + b * T + c * T**2)
+
+def Cp_air(T):
+    """
+    Calcul de la chaleur spécifique de l'air en J/(kg·K) en fonction de la température.
+    T : Température en Kelvin (K)
+    P: Pression en Pa"""
+    a, b, c, d = 1.003e3, 1.232e-1, -5.38e-5, 1.05e-8  # coefficients spécifiques à l'air
+    return a + b * T + c * T**2 + d * T**3
+
+def rho_air(T,P):
+    """
+    Calcul de la masse volumique de l'air en kg/m³ en fonction de la température.
+    T : Température en Kelvin (K)
+    P : Pression en Pascal (Pa) """
+    R = 287.05  # Constante spécifique de l'air en J/(kg·K)
+    return P / (R * T)
+
+def visc_air(T):
+    """
+    Calcul de la viscosité dynamique de l'air en Pa·s en fonction de la température.
+    T : Température en Kelvin (K)
+    """
+    mu_0 = 1.716e-5  # Viscosité de référence en Pa·s
+    T_0 = 273.15  # Température de référence en K
+    C = 111  # Constante de Sutherland en K
+    return mu_0 * (T / T_0)**1.5 * (T_0 + C) / (T + C)
+
+def Pr_air(T): #Nombre de Prandt
+    return visc_air(T)*Cp_air(T)/lambda_air(T)
+
+def alpha_air(T, P): #diffusivité thermique 
+    return lambda_air(T)/(rho_air(T,P)/Cp_air(T))
+
+
+# defintion des paramètres de H2 en fonction de la température à P=40 bars
+
+def visc_H2(T): #viscosité dynamique, T en K.
+    if T<70:
+        return 3.04167e-12*T**4-8.375e-10*T**3+8.68958e-8*T**2-4.01925e-6*T+7.375e-5
+    if T>=70:
+        return 2.3239726028e-8*T+2.2869863e-6
+
+
+def Cp_H2(T): #chaleur spécifique 
+    if T<70:
+        return -0.03924167*T**4+10.0305*T**3-942.835833*T**2+38327.85*T-547104
+    if T>=70:
+        return -0.0216480226*T**3+7.5687203652*T**2-863.87635351*T+45024.162274
+
+def lambda_H2(T): #conductivité thermique 
+    if T<70:
+        return -5.236666666667e-7*T**3+0.0001321107143*T**2-0.0106742690476*T+0.3486394285714
+    if T>=70:
+        return 4.1958333e-8*T**3-1.106875e-5*T**2+0.0013854917*T+0.010585
+
+def Pr_H2(T): #Nombre de Prandt
+    return visc_H2(T)*Cp_H2(T)/lambda_H2(T)
+
+def rho_H2(T): #Masse volumique
+    return  -2.49415E-08*T**5 + 1.30799E-05*T**4 - 2.72782E-03*T**3 + 2.84577E-01*T**2 - 1.50762E+01*T + 3.43112E+02
+
+def alpha_H2(T): #diffusivité thermique 
+    return lambda_H2(T)/(rho_H2(T)*Cp_H2(T))
+
+
+# Géométrie détaillée et surfaces d'échange
+
+Rext = Dext/2
+Rint = Dint/2
+
+# aire annulaire disponible pour l'air
+A_annulus = pi*(Rext**2 - Rint**2)
+
+# sections d'un tube
+A_tube_ext = pi*Dtubeext**2/4
+A_tube_int = pi*Dtubeint**2/4
+
+# pas imposé entre axes de deux tubes : 4 diamètres
+pas = 4*Dtubeext
+A_par_tube = pas**2
+
+# nombre de tubes possible
+Ntube = int(A_annulus / A_par_tube)
+
+print("Nombre de tubes :", Ntube)
+
+# sections d'écoulement
+A_flow_H2 = Ntube * A_tube_int
+A_flow_air = A_annulus - Ntube * A_tube_ext
+
+print("Section écoulement air   [m²] :", A_flow_air)
+print("Section écoulement H2    [m²] :", A_flow_H2)
+
+# diamètres caractéristiques pour les nombres de Reynolds
+D_char_air = Dtubeext      # cylindre balayé par l'air
+Dh_H2 = Dtubeint           # diamètre hydraulique interne
+
+# conductivité thermique de l'inconel
+lambda_inconel = 12.0  # W/m/K
+
+# Fonctions pour Re, h_air, h_H2f
+
+def reynolds(mdot, rho, mu, D_char, A_flow):
+    U = mdot/(rho*A_flow)
+    Re = rho*U*D_char/mu
+    return Re, U
+
+def prandtl(mu, cp, lamb):
+    return mu*cp/lamb
+
+# coefficients C et n en fonction du nombre de Reynolds et du nombre de Prandtl, d’apres Padet (page 32 poly)
+def Padet_C_m(Re):
+    if 0.4 <= Re < 4.0:
+        C, m = 0.989, 0.33
+    elif 4.0 <= Re < 40.0:
+        C, m = 0.911, 0.385
+    elif 40.0 <= Re < 4.0e3:
+        C, m = 0.683, 0.466
+    elif 4.0e3 <= Re < 4.0e4:
+        C, m = 0.193, 0.618
+    elif 4.0e4 <= Re < 4.0e5:
+        C, m = 0.027, 0.805
+    else:
+        C, m = 0.027, 0.805
+    return C, m
+
+def h_externe_cylindre(Re, Pr, lamb, D):
+    C, m = Padet_C_m(Re)
+    Nu = C*(Re**m)*(Pr**0.35)
+    h = Nu*lamb/D
+    return h
+
+# convection interne dans une conduite circulaire (H2)
+def h_interne_conduite(Re, Pr, lamb, Dh,
+                       condition_limite="Tparoi",
+                       turbulence_mode="auto"):
+    # régime laminaire
+    if Re < 2500.0:
+        if condition_limite == "flux":
+            Nu = 4.363
+        else:
+            Nu = 3.66
+    else:
+        # régime turbulent
+        if turbulence_mode == "Dittus":
+            Nu = 0.023*(Re**0.8)*(Pr**0.4)
+        elif turbulence_mode == "Colburn":
+            Nu = 0.023*(Re**0.8)*(Pr**(1.0/3.0))
+        else:
+            if 0.7 < Pr < 150.0:
+                Nu = 0.023*(Re**0.8)*(Pr**0.4)
+            elif Pr > 0.5:
+                Nu = 0.023*(Re**0.8)*(Pr**(1.0/3.0))
+            else:
+                Nu = 0.023*(Re**0.8)*(Pr**0.4)
+    h = Nu*lamb/Dh
+    return h
+# Résolution 1D le long de l'échangeur
+
+# nombre de mailles à partir de Dx
+N = int(L/Dx)
+x = np.linspace(0, L, N+1)
+
+T_air_profile = np.zeros(N+1)
+T_H2_profile  = np.zeros(N+1)
+
+T_air_profile[0] = Tair
+T_H2_profile[0]  = TH2
+
+for i in range(N):
+    T_air_i = T_air_profile[i]
+    T_H2_i  = T_H2_profile[i]
+
+    # propriétés air
+    lam_air_i = lambda_air(T_air_i)
+    cp_air_i  = Cp_air(T_air_i)
+    mu_air_i  = visc_air(T_air_i)
+    rho_air_i = rho_air(T_air_i, Pair)
+    Pr_air_i  = Pr_air(T_air_i)
+
+    # propriétés H2
+    lam_H2_i = lambda_H2(T_H2_i)
+    cp_H2_i  = Cp_H2(T_H2_i)
+    mu_H2_i  = visc_H2(T_H2_i)
+    rho_H2_i = rho_H2(T_H2_i)
+    Pr_H2_i  = Pr_H2(T_H2_i)
+
+    # nombres de Reynolds
+    Re_air_i, U_air_i = reynolds(qair, rho_air_i, mu_air_i, D_char_air, A_flow_air)
+    Re_H2_i,  U_H2_i  = reynolds(qH2,  rho_H2_i,  mu_H2_i, Dh_H2,      A_flow_H2)
+
+    # coefficients de convection
+    h_air_i = h_externe_cylindre(Re_air_i, Pr_air_i, lam_air_i, D_char_air)
+    h_H2_i  = h_interne_conduite(Re_H2_i,  Pr_H2_i,  lam_H2_i,  Dh_H2,
+                                 condition_limite="Tparoi",
+                                 turbulence_mode="auto")
+
+    # surfaces d'échange du segment
+    A_air_seg = Ntube * pi * Dtubeext * Dx
+    A_H2_seg  = Ntube * pi * Dtubeint * Dx
+
+    # résistances thermiques
+    R_conv_air = 1.0/(h_air_i*A_air_seg)
+    R_conv_H2  = 1.0/(h_H2_i*A_H2_seg)
+    R_cond     = np.log(Dtubeext/Dtubeint)/(2.0*pi*lambda_inconel*Dx*Ntube)
+
+    R_eq = R_conv_air + R_cond + R_conv_H2
+
+    # flux thermique sur le segment
+    deltaT = T_air_i - T_H2_i
+    Phi = deltaT/R_eq   # [W]
+
+    # mise à jour des températures
+    T_air_profile[i+1] = T_air_i - Phi/(qair*cp_air_i)
+    T_H2_profile[i+1]  = T_H2_i  + Phi/(qH2*cp_H2_i)
+
+T_air_out = T_air_profile[-1]
+T_H2_out  = T_H2_profile[-1]
+
+print("Température de sortie air [K] =", T_air_out)
+print("Température de sortie H2  [K] =", T_H2_out)
+
